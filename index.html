@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<title>WebGL2.0 谢尔宾斯基垫片 | 混沌游戏 + 递归细分</title>
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #111;
+    color: #fff;
+}
+body {
+    display: flex;
+}
+#canvasWrap {
+    flex: 1;
+    height: 100vh;
+    background: #000;
+}
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+#gui {
+    width:300px;
+    flex-shrink:0;
+    height:100vh;
+    overflow-y:auto;
+    padding:16px;
+    background:#1f1f1f;
+    border-left:1px solid #333;
+}
+h3 {
+    margin-bottom:14px;
+    font-size:18px;
+}
+.ctrl {
+    margin:12px 0;
+}
+label {
+    display:block;
+    font-size:14px;
+    margin-bottom:4px;
+}
+input, select, button {
+    width:100%;
+    padding:6px;
+    font-size:14px;
+}
+button {
+    cursor:pointer;
+}
+.info {
+    margin-top:18px;
+    font-size:13px;
+    line-height:1.6;
+    color:#cccccc;
+}
+</style>
+</head>
+<body>
+<div id="canvasWrap">
+    <canvas id="glcanvas"></canvas>
+</div>
+<div id="gui">
+    <h3>参数面板</h3>
+    <div class="ctrl">
+        <label>渲染模式</label>
+        <select id="modeSel">
+            <option value="chaos">1‑混沌游戏（点云生长）</option>
+            <option value="subPoints">2‑递归细分 POINTS</option>
+            <option value="subLines">3‑递归细分 LINES</option>
+            <option value="subTri">4‑递归细分 TRIANGLES</option>
+        </select>
+    </div>
+    <div class="ctrl">
+        <label>混沌游戏：目标点数 (≥5000)</label>
+        <input id="maxPointInput" type="number" min="5000" value="50000"/>
+    </div>
+    <div class="ctrl">
+        <label>递归深度 (0~6)</label>
+        <input id="depthInput" type="number" min="0" max="6" value="4"/>
+    </div>
+    <div class="ctrl">
+        <label>点大小</label>
+        <input id="pointSizeInput" type="range" min="1" max="8" step="0.5" value="2"/>
+    </div>
+    <div class="ctrl">
+        <label>配色方案</label>
+        <select id="colorSel">
+            <option value="scheme0">方案0：纯白</option>
+            <option value="scheme1">方案1：彩虹</option>
+            <option value="scheme2">方案2：暖橙</option>
+        </select>
+    </div>
+    <button id="resetBtn">重置视图 & 数据</button>
+    <div class="info">
+键盘快捷键：<br>
+1 混沌游戏<br>
+2 点细分<br>
+3 线框<br>
+4 实体三角形<br>
+空格：暂停/继续生长动画<br>
+鼠标：左键拖动平移，滚轮缩放
+    </div>
+</div>
+
+<script src="Common/initShaders.js"></script>
+<script src="Common/MV.js"></script>
+
+<script>
+"use strict";
+
+let gl, program;
+let vBuffer, cBuffer;
+let uProjLoc, uPointSizeLoc;
+
+const state = {
+    renderMode: "chaos",
+    maxPoints: 50000,
+    subdivDepth:4,
+    pointSize:2.0,
+    colorScheme:"scheme1",
+
+    growing:true,
+    currentPointCount:0,
+    chaosPoints:[],
+    currentP: vec2(0,0),
+    // 严格等边三角形 A(-1,0), B(1,0), C(0,√3)
+    triVerts: [ vec2(-1, 0), vec2(1, 0), vec2(0, Math.sqrt(3)) ],
+
+    subVertices:[],
+    subColors:[],
+
+    offsetX:0, offsetY:-0.3,
+    scale:0.4,
+    drag:false, dragStartX:0, dragStartY:0
+};
+
+const vsSource = `#version 300 es
+in vec2 vPosition;
+in vec3 vColor;
+uniform mat4 uProj;
+uniform float uPointSize;
+out vec3 fColor;
+void main(){
+    gl_Position = uProj * vec4(vPosition, 0.0, 1.0);
+    gl_PointSize = uPointSize;
+    fColor = vColor;
+}`;
+
+const fsSource = `#version 300 es
+precision highp float;
+in vec3 fColor;
+out vec4 fragColor;
+void main(){
+    fragColor = vec4(fColor, 1.0);
+}`;
+
+window.onload = init;
+
+function init(){
+    const canvas = document.getElementById("glcanvas");
+
+    function resizeCanvas(){
+        const wrap = document.getElementById("canvasWrap");
+        canvas.width = wrap.clientWidth;
+        canvas.height = wrap.clientHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+
+    gl = canvas.getContext("webgl2");
+    if(!gl){
+        alert("浏览器不支持WebGL2，请使用Chrome/Firefox");
+        return;
+    }
+
+    program = initShaders(gl, vsSource, fsSource);
+    if(!program) return;
+    gl.useProgram(program);
+    gl.enable(gl.PROGRAM_POINT_SIZE);
+
+    uProjLoc = gl.getUniformLocation(program, "uProj");
+    uPointSizeLoc = gl.getUniformLocation(program, "uPointSize");
+
+    vBuffer = gl.createBuffer();
+    cBuffer = gl.createBuffer();
+
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    bindGUI();
+    bindMouseEvents(canvas);
+    bindKeyboard();
+
+    resetAll();
+    renderLoop();
+}
+
+function bindGUI(){
+    const modeSel = document.getElementById("modeSel");
+    const maxPointInput = document.getElementById("maxPointInput");
+    const depthInput = document.getElementById("depthInput");
+    const pointSizeInput = document.getElementById("pointSizeInput");
+    const colorSel = document.getElementById("colorSel");
+    const resetBtn = document.getElementById("resetBtn");
+
+    modeSel.onchange = ()=>{
+        state.renderMode = modeSel.value;
+        resetAll();
+    };
+    maxPointInput.oninput = ()=>{
+        state.maxPoints = Math.max(5000, Number(maxPointInput.value));
+        resetAll();
+    };
+    depthInput.oninput = ()=>{
+        state.subdivDepth = clamp(Number(depthInput.value),0,6);
+        resetAll();
+    };
+    pointSizeInput.oninput = ()=>{
+        state.pointSize = Number(pointSizeInput.value);
+    };
+    colorSel.onchange = ()=>{
+        state.colorScheme = colorSel.value;
+        resetAll();
+    };
+    resetBtn.onclick = resetAll;
+}
+
+function resetAll(){
+    state.chaosPoints = [];
+    state.currentPointCount = 0;
+    state.currentP = vec2(0,0);
+    state.subVertices = [];
+    state.subColors = [];
+    state.growing = true;
+
+    if(state.renderMode !== "chaos"){
+        state.subVertices = [];
+        subdivide(state.triVerts[0], state.triVerts[1], state.triVerts[2], state.subdivDepth);
+        fillSubColors();
+    }
+}
+
+function subdivide(a,b,c, depth){
+    if(depth <= 0){
+        if(state.renderMode === "subPoints"){
+            state.subVertices.push(a,b,c);
+        }else if(state.renderMode === "subLines"){
+            state.subVertices.push(a,b, b,c, c,a);
+        }else{
+            state.subVertices.push(a,b,c);
+        }
+        return;
+    }
+    const ab = mix(a,b,0.5);
+    const bc = mix(b,c,0.5);
+    const ca = mix(c,a,0.5);
+    subdivide(a, ab, ca, depth-1);
+    subdivide(b, bc, ab, depth-1);
+    subdivide(c, ca, bc, depth-1);
+}
+
+function fillSubColors(){
+    state.subColors = [];
+    for(let i=0;i<state.subVertices.length;i++){
+        state.subColors.push(getColor(state.subVertices[i]));
+    }
+}
+
+function stepChaosGame(){
+    if(!state.growing) return;
+    if(state.currentPointCount >= state.maxPoints) return;
+
+    const rid = Math.floor(Math.random() * 3);
+    const v = state.triVerts[rid];
+    state.currentP = vec2( (state.currentP[0]+v[0])/2, (state.currentP[1]+v[1])/2 );
+    state.chaosPoints.push(state.currentP);
+    state.currentPointCount++;
+}
+
+function getColor(pt){
+    const s = state.colorScheme;
+    const x = pt[0], y = pt[1];
+    if(s === "scheme0"){
+        return vec3(0.95,0.95,0.95);
+    }else if(s === "scheme1"){
+        return vec3( (x+1)/2, (y / Math.sqrt(3)), 0.6 );
+    }else if(s === "scheme2"){
+        return vec3(1.0, 0.4+0.3*y, 0.1);
+    }
+    return vec3(1,1,1);
+}
+
+function bindMouseEvents(canvas){
+    canvas.onmousedown = e=>{
+        state.drag=true;
+        state.dragStartX = e.clientX;
+        state.dragStartY = e.clientY;
+    };
+    canvas.onmousemove = e=>{
+        if(!state.drag) return;
+        const dx = e.clientX - state.dragStartX;
+        const dy = e.clientY - state.dragStartY;
+        state.offsetX += dx / 300;
+        state.offsetY -= dy /300;
+        state.dragStartX = e.clientX;
+        state.dragStartY = e.clientY;
+    };
+    canvas.onmouseup = ()=> state.drag=false;
+    canvas.onwheel = e=>{
+        e.preventDefault();
+        const factor = e.deltaY >0 ? 0.9 : 1.1;
+        state.scale *= factor;
+    };
+}
+
+function bindKeyboard(){
+    window.onkeydown = e=>{
+        switch(e.key){
+            case "1": state.renderMode="chaos"; document.getElementById("modeSel").value="chaos"; resetAll(); break;
+            case "2": state.renderMode="subPoints"; document.getElementById("modeSel").value="subPoints"; resetAll(); break;
+            case "3": state.renderMode="subLines"; document.getElementById("modeSel").value="subLines"; resetAll(); break;
+            case "4": state.renderMode="subTri"; document.getElementById("modeSel").value="subTri"; resetAll(); break;
+            case " ": state.growing = !state.growing; break;
+        }
+    }
+}
+
+function renderLoop(){
+    requestAnimationFrame(renderLoop);
+    const canvas = document.getElementById("glcanvas");
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.uniform1f(uPointSizeLoc, state.pointSize);
+
+    if(state.renderMode === "chaos"){
+        for(let k=0;k<800;k++) stepChaosGame();
+        const pts = state.chaosPoints;
+        const cols = [];
+        for(let p of pts) cols.push(getColor(p));
+        drawPrimitives(canvas, pts, cols, gl.POINTS);
+    }else{
+        let prim;
+        if(state.renderMode === "subPoints") prim = gl.POINTS;
+        else if(state.renderMode === "subLines") prim = gl.LINES;
+        else prim = gl.TRIANGLES;
+        drawPrimitives(canvas, state.subVertices, state.subColors, prim);
+    }
+}
+
+function drawPrimitives(canvas, vertices, colors, primitive){
+    if(vertices.length ===0) return;
+
+    const aspect = canvas.width / canvas.height;
+    let proj = mat4();
+    proj = mult(proj, translate(state.offsetX, state.offsetY, 0));
+    // 修正：Y轴乘aspect，保证像素空间1X=1Y
+    proj = mult(proj, scale( state.scale, state.scale * aspect, 1.0 ));
+
+    gl.uniformMatrix4fv(uProjLoc, false, flatten(proj));
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(vertices), gl.DYNAMIC_DRAW);
+    const posLoc = gl.getAttribLocation(program, "vPosition");
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0,0);
+    gl.enableVertexAttribArray(posLoc);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.DYNAMIC_DRAW);
+    const colorLoc = gl.getAttribLocation(program, "vColor");
+    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false,0,0);
+    gl.enableVertexAttribArray(colorLoc);
+
+    gl.drawArrays(primitive, 0, vertices.length);
+}
+
+function clamp(v, min, max){ return Math.max(min, Math.min(max,v)); }
+</script>
+</body>
