@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>太阳系层级建模 · WebGL2 图形学实验二</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,"Microsoft YaHei",sans-serif}
+body{margin:0;background:#000;color:#fff;display:flex;overflow:hidden}
+#glcanvas{display:block;border:1px solid #222}
+#panel{width:330px;flex:0 0 330px;padding:14px 16px;border-left:1px solid #444;height:100vh;overflow-y:auto}
+h3{margin:0 0 4px;font-size:16px}
+.sub{font-size:11px;color:#678;margin-bottom:12px}
+h4{margin:16px 0 6px;font-size:12px;color:#7a9;letter-spacing:1px;font-weight:600;
+   border-bottom:1px solid #2a3a3a;padding-bottom:4px}
+.ctrl{margin:8px 0}
+label{display:block;font-size:13px;margin-bottom:2px;color:#cdd}
+label.inline{display:flex;align-items:center;gap:6px;cursor:pointer}
+input[type=range]{width:100%;accent-color:#4a8cff}
+input[type=checkbox]{accent-color:#4a8cff}
+button{padding:5px 9px;margin:2px 2px 2px 0;cursor:pointer;background:#1a1f26;color:#cde;
+       border:1px solid #384250;border-radius:4px;font-size:12px}
+button:hover{background:#252d38}
+button.on{background:#1e5aa8;color:#fff;border-color:#4a8cff}
+.val{color:#4a8cff;font-variant-numeric:tabular-nums}
+.info{font-size:11px;color:#8a9;margin-top:16px;line-height:1.7;border-top:1px solid #2a3a3a;padding-top:10px}
+.info b{color:#bcd}
+kbd{background:#222;border:1px solid #444;border-radius:3px;padding:0 4px;font-size:10px;font-family:monospace}
+#hud{position:fixed;top:10px;right:346px;font-size:11px;color:#8ab;background:rgba(0,0,0,.6);
+     padding:6px 10px;border-radius:4px;font-variant-numeric:tabular-nums;pointer-events:none;
+     border:1px solid rgba(80,120,160,.25)}
+/* 贴图状态独立成角标：原先塞在 #panel 的 .info 末尾，
+   面板一滚动就被推到看不见的地方，改成固定在左下角常驻显示。 */
+#texStat{position:fixed;left:12px;bottom:10px;font-size:11px;color:#5a9;
+     background:rgba(0,0,0,.62);padding:5px 10px;border-radius:4px;pointer-events:none;
+     border:1px solid rgba(90,140,120,.28);z-index:15}
+#eclipseBanner{position:fixed;top:50%;left:calc(50% - 165px);transform:translate(-50%,-50%);
+     font-size:20px;letter-spacing:6px;color:#ffd77a;text-shadow:0 0 24px #ff9a00,0 0 48px #ff6a00;
+     opacity:0;transition:opacity .5s;pointer-events:none;font-weight:700}
+#texTip{position:fixed;top:8px;left:50%;transform:translateX(-50%);display:none;
+     max-width:min(760px,70vw);font-size:12px;line-height:1.6;color:#ffd0a0;
+     background:rgba(60,20,0,.88);border:1px solid #a35;border-radius:6px;
+     padding:8px 14px;z-index:20;pointer-events:none;text-align:center}
+#err{position:fixed;inset:0;display:none;place-items:center;background:#000;z-index:99;padding:40px}
+#err pre{color:#f88;font:12px/1.7 monospace;white-space:pre-wrap;max-width:820px;
+         border:1px solid #500;padding:16px;border-radius:6px;background:#0a0000}
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+
+<div id="panel">
+  <h3>太阳系层级建模</h3>
+  <div class="sub">WebGL 2.0 · 教材 Common 工具库</div>
+
+  <h4>动画控制</h4>
+  <div class="ctrl">
+    <label>公转速度 <span class="val" id="vOrbitVal">1.00</span>×</label>
+    <input type="range" id="vOrbit" min="0" max="3" step="0.05" value="1">
+  </div>
+  <div class="ctrl">
+    <label>自转速度 <span class="val" id="vSpinVal">1.00</span>×</label>
+    <input type="range" id="vSpin" min="0" max="3" step="0.05" value="1">
+  </div>
+  <div class="ctrl">
+    <label>时间倍率 <span class="val" id="timeScaleVal">1.00</span>×</label>
+    <input type="range" id="timeScale" min="0.1" max="8" step="0.1" value="1">
+  </div>
+
+  <h4>天体参数</h4>
+  <div class="ctrl">
+    <label>地轴倾角 <span class="val" id="tiltVal">23.5</span>°</label>
+    <input type="range" id="earthTilt" min="0" max="90" step="0.5" value="23.5">
+  </div>
+  <div class="ctrl">
+    <label>月球轨道倾角 <span class="val" id="moonTiltVal">5.1</span>°</label>
+    <input type="range" id="moonTilt" min="0" max="30" step="0.1" value="5.1">
+  </div>
+
+  <h4>显示选项</h4>
+  <div class="ctrl"><label class="inline"><input type="checkbox" id="drawOrbit" checked> 行星轨道线</label></div>
+  <div class="ctrl"><label class="inline"><input type="checkbox" id="drawStars" checked> 星空背景</label></div>
+  <div class="ctrl"><label class="inline"><input type="checkbox" id="drawBelt" checked> 小行星带（E1）</label></div>
+  <div class="ctrl"><label class="inline"><input type="checkbox" id="drawRing" checked> 土星环（E1）</label></div>
+
+  <h4>投影与相机</h4>
+  <div class="ctrl">
+    <button id="btnPersp" class="on">透视</button>
+    <button id="btnOrtho">正交</button>
+    <button id="btnReset">复位视角</button>
+  </div>
+  <div class="ctrl"><label class="inline"><input type="checkbox" id="roamChk" checked> 自动漫游</label></div>
+  <div class="ctrl"><label class="inline"><input type="checkbox" id="trackChk"> 追踪地球（近景看日月食）</label></div>
+
+  <h4>日月食演示（E2）</h4>
+  <div class="ctrl">
+    <button id="btnSolar">演示日食</button>
+    <button id="btnLunar">演示月食</button>
+    <button id="btnEclOff">解除</button>
+  </div>
+
+  <div class="info">
+    <b>快捷键</b><br>
+    <kbd>O</kbd> 正交/透视 &nbsp; <kbd>空格</kbd> 暂停漫游<br>
+    <kbd>1</kbd> 日食 &nbsp; <kbd>2</kbd> 月食 &nbsp; <kbd>R</kbd> 复位<br>
+    鼠标拖拽 轨迹球旋转 · 滚轮 缩放<br>
+    <br>
+    <b>已实现的要点</b><br>
+    · 层级矩阵 太阳→行星→卫星<br>
+    · 地轴倾斜先于自转（四季成因）<br>
+    · 月球轨道倾角手动 mult 拼接<br>
+    · UNPACK_FLIP_Y_WEBGL 纹理修正<br>
+    · 双投影对比 + 相机漫游<br>
+    · E1 八大行星 / 土星环 / 小行星带<br>
+    · E2 本影·半影锥日月食模拟<br>
+    · E3 虚拟轨迹球（四元数累积）<br>
+  </div>
+</div>
+
+<div id="hud">初始化…</div>
+<div id="texStat">贴图加载中…</div>
+<div id="texTip"></div>
+<div id="eclipseBanner"></div>
+<div id="err"><pre id="errMsg"></pre></div>
+
+<!-- ===== 教材配套工具库（未做任何修改） ===== -->
+<script src="Common/utility.js"></script>
+<script src="Common/MV.js"></script>
+
+<!-- ===== 着色器 ===== -->
+<script id="vshader" type="x-shader/x-vertex">#version 300 es
+precision highp float;
+in vec4 aPosition;
+in vec2 aTexCoord;
+uniform mat4 uModelView;
+uniform mat4 uProjection;
+uniform mat3 uNormalMat;
+uniform vec3 uLightDir;
+uniform float uAmbient;
+out vec2 vTexCoord;
+out float vLight;
+void main(){
+  gl_Position = uProjection * uModelView * aPosition;
+  vTexCoord = aTexCoord;
+
+  /* 球面法线 = 归一化局部坐标（单位球）。
+     在视图空间做兰伯特散射，太阳位于原点，光方向随相机变化。 */
+  vec3 n = normalize(uNormalMat * aPosition.xyz);
+  float d = max(dot(n, normalize(uLightDir)), 0.0);
+
+  /* 【明暗过渡】纯兰伯特 + 很低的环境光，会让背光面塌成纯黑一片；
+     再加 pow(d, 0.85) 这种偏硬的曲线，亮暗交界几乎是一条刀口。
+     这里做两件事：
+       ① 给暗部一点「回光」：earthshine = 0.16 * d，让球体边缘不至于挖空；
+       ② 用 smoothstep 把 d 的过渡区间拉宽，半球面有连续渐变的明暗带。
+     真实感不是重点，重点是【任何视角下都能看清这是一颗球、上面有纹理】。 */
+  float diff = smoothstep(0.0, 0.92, pow(d, 0.80));
+  vLight = uAmbient + (1.0 - uAmbient) * diff + 0.16 * d;
+  vLight = min(vLight, 1.35);
+}
+</script>
+
+<script id="fshader" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 vTexCoord;
+in float vLight;
+uniform sampler2D uTex;
+uniform float uSelfLit;
+uniform vec4 uTint;
+out vec4 fragColor;
+void main(){
+  vec3 c = texture(uTex, vTexCoord).rgb;
+  float k = mix(vLight, 1.0, uSelfLit);
+  fragColor = vec4(c * uTint.rgb * k, uTint.a);
+}
+</script>
+
+<script id="lvshader" type="x-shader/x-vertex">#version 300 es
+precision highp float;
+in vec4 aPosition;
+uniform mat4 uModelView;
+uniform mat4 uProjection;
+out float vDepth;
+void main(){
+  vec4 p = uModelView * aPosition;
+  gl_Position = uProjection * p;
+  vDepth = -p.z;
+}
+</script>
+
+<script id="lfshader" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+uniform vec4 uColor;
+uniform float uFade;
+in float vDepth;
+out vec4 fragColor;
+void main(){
+  float a = uColor.a;
+  if(uFade > 0.5){
+    /* 远端轨道线淡出，避免线框撑满画面 */
+    a *= clamp(1.0 - (vDepth - 10.0) / 40.0, 0.10, 1.0);
+  }
+  fragColor = vec4(uColor.rgb, a);
+}
+</script>
+
+<script id="pvshader" type="x-shader/x-vertex">#version 300 es
+precision highp float;
+in vec4 aPosition;
+in float aSize;
+uniform mat4 uModelView;
+uniform mat4 uProjection;
+uniform float uPerspective;
+out float vBright;
+void main(){
+  vec4 p = uModelView * aPosition;
+  gl_Position = uProjection * p;
+  float dist = max(-p.z, 0.001);
+  /* 透视：点大小按 1/z 衰减（近大远小）；正交：保持恒定 */
+  gl_PointSize = mix(aSize, aSize * (16.0 / dist), uPerspective);
+  gl_PointSize = clamp(gl_PointSize, 0.7, 8.0);
+  vBright = mix(1.0, clamp(1.45 - dist / 110.0, 0.18, 1.0), uPerspective);
+}
+</script>
+
+<script id="pfshader" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+uniform vec4 uColor;
+in float vBright;
+out vec4 fragColor;
+void main(){
+  /* 方点修圆：超出半径 0.5 的片元丢弃，边缘做软过渡 */
+  vec2 d = gl_PointCoord - vec2(0.5);
+  float r = length(d);
+  if(r > 0.5) discard;
+  float edge = smoothstep(0.5, 0.14, r);
+  fragColor = vec4(uColor.rgb * vBright, uColor.a * edge);
+}
+</script>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   0. 错误兜底：任何未捕获异常直接铺在页面上，避免黑屏无提示
+   ========================================================================== */
+const errBox = document.getElementById('err');
+const errMsg = document.getElementById('errMsg');
+function fatal(msg){
+  errMsg.textContent = String(msg);
+  errBox.style.display = 'grid';
+  console.error(msg);
+}
+window.addEventListener('error', function(e){
+  fatal(e.message + '\n\n' + ((e.error && e.error.stack) || ''));
+});
+
+/* ==========================================================================
+   1. WebGL2 上下文
+   --------------------------------------------------------------------------
+   教材 utility.js 只提供 getShaderSource / createProgram，不负责创建上下文，
+   所以要自己申请 webgl2。
+   ========================================================================== */
+const canvas = document.getElementById('glcanvas');
+let gl = null;
+try { gl = canvas.getContext('webgl2', { antialias: true, alpha: false }); } catch(e){ gl = null; }
+if(!gl){
+  fatal('无法创建 WebGL2 上下文。\n请用新版 Chrome / Edge，并确认 chrome://gpu 中硬件加速已开启。');
+  throw new Error('WebGL2 unavailable');
+}
+
+/* ==========================================================================
+   2. 三个程序 + uniform 位置缓存
+   --------------------------------------------------------------------------
+   getUniformLocation 是字符串查表，不能在 render() 里每帧调用，初始化时查一次。
+   ========================================================================== */
+const program   = createProgram(gl, getShaderSource('vshader'),  getShaderSource('fshader'));
+const lineProg  = createProgram(gl, getShaderSource('lvshader'), getShaderSource('lfshader'));
+const pointProg = createProgram(gl, getShaderSource('pvshader'), getShaderSource('pfshader'));
+
+const loc = {
+  aPosition:   gl.getAttribLocation(program, 'aPosition'),
+  aTexCoord:   gl.getAttribLocation(program, 'aTexCoord'),
+  uModelView:  gl.getUniformLocation(program, 'uModelView'),
+  uProjection: gl.getUniformLocation(program, 'uProjection'),
+  uNormalMat:  gl.getUniformLocation(program, 'uNormalMat'),
+  uLightDir:   gl.getUniformLocation(program, 'uLightDir'),
+  uAmbient:    gl.getUniformLocation(program, 'uAmbient'),
+  uTex:        gl.getUniformLocation(program, 'uTex'),
+  uSelfLit:    gl.getUniformLocation(program, 'uSelfLit'),
+  uTint:       gl.getUniformLocation(program, 'uTint'),
+
+  laPosition:  gl.getAttribLocation(lineProg, 'aPosition'),
+  luModelView: gl.getUniformLocation(lineProg, 'uModelView'),
+  luProjection:gl.getUniformLocation(lineProg, 'uProjection'),
+  luColor:     gl.getUniformLocation(lineProg, 'uColor'),
+  luFade:      gl.getUniformLocation(lineProg, 'uFade'),
+
+  paPosition:  gl.getAttribLocation(pointProg, 'aPosition'),
+  paSize:      gl.getAttribLocation(pointProg, 'aSize'),
+  puModelView: gl.getUniformLocation(pointProg, 'uModelView'),
+  puProjection:gl.getUniformLocation(pointProg, 'uProjection'),
+  puPerspective:gl.getUniformLocation(pointProg, 'uPerspective'),
+  puColor:     gl.getUniformLocation(pointProg, 'uColor'),
+};
+
+/* ==========================================================================
+   3. 全局状态
+   ========================================================================== */
+const cfg = {
+  vOrbit: 1.0,
+  vSpin: 1.0,
+  timeScale: 1.0,
+  earthTilt: 23.5,
+  moonTilt: 5.1,
+  drawOrbit: true,
+  drawStars: true,
+  drawBelt: true,
+  drawRing: true,
+  roam: true,
+  track: false,
+};
+
+let projectionMode = 'persp';
+let simTime = 0;
+let roamT = 0;
+/* 相机距离：全局视野用 34（海王星轨道 28.6，留一点余量），
+   追踪地球/日月食演示时切到 8。
+   这两个值集中在这里定义，别处一律引用 CAM_FAR / CAM_NEAR，避免改漏。 */
+const CAM_FAR  = 34.0;
+const CAM_NEAR = 8.0;
+let camDist = CAM_FAR;
+let isDrag = false;
+let lastFrame = 0;
+
+/* 轨迹球姿态：用四元数累积（E3）。
+   相比欧拉角的好处：无万向节死锁，绕过极点时不会翻转。 */
+const trackballQuat = [0, 0, 0, 1];   // [x, y, z, w]
+
+/* 日月食 */
+let eclipseMode = 'none';             // 'none' | 'solar' | 'lunar'
+let eclipseActive = null;
+
+/* ==========================================================================
+   4. 场景尺寸
+   --------------------------------------------------------------------------
+   真实比例下地球半径与日地距离之比约 1:23500，地球在屏幕上不足一像素，
+   所以天体尺寸做了放大；但公转周期之比、轨道倾角、自转轴倾角保持真实。
+   ========================================================================== */
+const SUN_R = 2.2;
+
+/* 行星数据表
+   orbit  轨道半径（场景单位）      r      球体半径
+   period 公转角速度系数            spin   自转角速度系数（负 = 逆向自转）
+   tilt   自转轴倾角（度）          incl   轨道倾角（度）
+   phase  初始相位（弧度）
+
+   【关于 r 为什么不按真实比例】
+   真实比例下地球半径只有太阳的 1/109，写成场景单位是 0.02，
+   在 26 单位的相机距离下投影出来不到半个像素——画面上就是「什么都没有」。
+   这里让「相对大小」保持真实口径（木星 > 土星 > 天王星≈海王星 > 地球 > 金星 > 火星 > 水星），
+   但把整体尺度抬到能在屏幕上至少占 6~10 像素，这是太阳系演示的通用做法。 */
+const PLANETS = [
+  { name:'水星',   tex:'mercury.jpg', orbit: 3.8, r:0.42, period:4.15,  spin:0.35, tilt: 0.03, incl:7.00, phase:0.0 },
+  { name:'金星',   tex:'venus.jpg',   orbit: 5.2, r:0.52, period:1.62,  spin:-0.12,tilt:177.4, incl:3.40, phase:1.9 },
+  { name:'地球',   tex:'earth.jpg',   orbit: 7.2, r:0.55, period:1.00,  spin:1.00, tilt:23.5,  incl:0.00, phase:3.4, isEarth:true },
+  { name:'火星',   tex:'mars.jpg',    orbit: 9.6, r:0.45, period:0.53,  spin:0.97, tilt:25.2,  incl:1.85, phase:5.1 },
+  { name:'木星',   tex:'jupiter.jpg', orbit:14.6, r:1.35, period:0.084, spin:2.40, tilt:3.10,  incl:1.30, phase:0.7 },
+  { name:'土星',   tex:'saturn.jpg',  orbit:19.4, r:1.15, period:0.034, spin:2.20, tilt:26.7,  incl:2.50, phase:2.6, hasRing:true },
+  { name:'天王星', tex:'uranus.jpg',  orbit:24.2, r:0.80, period:0.012, spin:1.30, tilt:97.8,  incl:0.77, phase:4.4 },
+  { name:'海王星', tex:'neptune.jpg', orbit:28.6, r:0.78, period:0.006, spin:1.25, tilt:28.3,  incl:1.77, phase:5.8 },
+];
+
+const MOON_ORBIT = 1.75;
+const MOON_R     = 0.20;
+const RING_INNER = 1.45;
+const RING_OUTER = 2.65;
+
+/* 判定日月食用地球遮挡半径。
+   场景为了看得清，天体半径已比真实比例放大很多（地球渲染半径 0.55，
+   而真实比例只有太阳的 1/109）。判定若直接沿用渲染半径，
+   地影锥会张开到覆盖整条月球轨道，月球每个周期都判成「全食」，画面一直闪横幅。
+   所以判定单独用一套贴近真实比例的小半径，与渲染半径互不干扰。 */
+const EARTH_SHADOW_R = 0.75;
+
+/* ---------------------------------------------------------------------------
+   日月食判定的三个尺度参数
+
+   场景为了看得清，把天体半径放大得远超过真实比例：
+   地球渲染半径 0.42，而月地距只有 1.05（真实比例约 1:60）。
+   如果直接拿 0.42 当遮挡半径去投射地影锥，锥体几乎覆盖整条月球轨道，
+   月球每个周期都会「全食」，画面一直在闪横幅，完全没有观赏性。
+
+   所以判定单独用一套「按真实比例」的小半径：地球 0.11、月球 0.06
+   （真实地月半径比约 3.7:1，这里 1.83:1 已经偏小，但足以让地影锥
+   在月地距 1.75 处收束到与月球相当的尺度）。
+   渲染用的半径仍是 EARTH_SHADOW_R / MOON_R，两者互不影响。
+
+   等效太阳半径同样要分开取，因为两种情形的遮挡体半径差了一倍：
+     · 日食：月球半径 0.06 遮地球 0.11。要让本影锥「几乎不收」，取 Rs 略小于 Rb，
+       锥体缓慢收缩，对齐时能覆盖地球截面（U≈0.54），偏 30° 才彻底消失。
+     · 月食：地球半径 0.11 遮月球 0.06。取 Rs = 0.16，
+       锥长 Lu = Rb·d/(Rs−Rb) = 0.11×7.2/0.05 ≈ 15.8，
+       在 1.75 处半径 uR ≈ 0.074，刚好能吞下月球（0.06）；
+       偏 6° 转为偏食，偏 12° 完全离开——即「只有靠近满月才可能月食」。
+   --------------------------------------------------------------------------- */
+const ECLIPSE_EARTH_R = 0.11;   // 判定用地影遮挡半径（按真实比例）
+const ECLIPSE_MOON_R  = 0.06;   // 判定用月影遮挡半径
+const SUN_R_SOLAR = 0.055;  // 日食判定用的等效太阳半径
+const SUN_R_LUNAR = 0.16;   // 月食判定用的等效太阳半径
+
+/* ==========================================================================
+   5. 几何体
+   ========================================================================== */
+function createSphere(subdiv){
+  const pos = [], uv = [], idx = [];
+  for(let lat = 0; lat <= subdiv; lat++){
+    const theta = Math.PI * lat / subdiv;
+    const st = Math.sin(theta), ct = Math.cos(theta);
+    for(let lon = 0; lon <= subdiv; lon++){
+      const phi = 2 * Math.PI * lon / subdiv;
+      pos.push(st * Math.cos(phi), ct, st * Math.sin(phi));
+      /* v = 1 - lat/subdiv 配合 UNPACK_FLIP_Y_WEBGL=true，
+         图片顶端落在北极。两处都不翻转会让地球上下颠倒。 */
+      uv.push(lon / subdiv, 1 - lat / subdiv);
+    }
+  }
+  for(let lat = 0; lat < subdiv; lat++){
+    for(let lon = 0; lon < subdiv; lon++){
+      const a = lat * (subdiv + 1) + lon;
+      const b = a + 1;
+      const c = (lat + 1) * (subdiv + 1) + lon;
+      const d = c + 1;
+      idx.push(a, c, b,  b, c, d);
+    }
+  }
+  return { pos:new Float32Array(pos), uv:new Float32Array(uv), idx:new Uint16Array(idx) };
+}
+
+/* 土星环：平面圆环，u 方向 = 径向（0 内径 → 1 外径），用于采样条带贴图 */
+function createRing(inner, outer, segs, rings){
+  const pos = [], uv = [], idx = [];
+  for(let i = 0; i <= rings; i++){
+    const t = i / rings;
+    const rad = inner + (outer - inner) * t;
+    for(let j = 0; j <= segs; j++){
+      const a = 2 * Math.PI * j / segs;
+      pos.push(rad * Math.cos(a), 0, rad * Math.sin(a));
+      uv.push(t, 0.5);
+    }
+  }
+  for(let i = 0; i < rings; i++){
+    for(let j = 0; j < segs; j++){
+      const a = i * (segs + 1) + j;
+      const b = a + 1;
+      const c = (i + 1) * (segs + 1) + j;
+      const d = c + 1;
+      idx.push(a, c, b,  b, c, d);
+    }
+  }
+  return { pos:new Float32Array(pos), uv:new Float32Array(uv), idx:new Uint32Array(idx) };
+}
+
+function createCircle(r, segs){
+  const p = [];
+  for(let i = 0; i <= segs; i++){
+    const a = 2 * Math.PI * i / segs;
+    p.push(r * Math.cos(a), 0, r * Math.sin(a));
+  }
+  return { pos:new Float32Array(p), count: segs + 1 };
+}
+
+const sphereGeo = createSphere(48);
+
+/* ==========================================================================
+   6. VAO
+   ========================================================================== */
+function buildSphereVAO(){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const bPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos);
+  gl.bufferData(gl.ARRAY_BUFFER, sphereGeo.pos, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aPosition);
+  gl.vertexAttribPointer(loc.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+  const bUv = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bUv);
+  gl.bufferData(gl.ARRAY_BUFFER, sphereGeo.uv, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aTexCoord);
+  gl.vertexAttribPointer(loc.aTexCoord, 2, gl.FLOAT, false, 0, 0);
+
+  /* 索引 buffer 必须绑在 VAO 内 —— ELEMENT_ARRAY_BUFFER 属于 VAO 状态 */
+  const bIdx = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphereGeo.idx, gl.STATIC_DRAW);
+
+  gl.bindVertexArray(null);
+  return vao;
+}
+
+function buildRingVAO(inner, outer){
+  const g = createRing(inner, outer, 180, 10);
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const bPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos);
+  gl.bufferData(gl.ARRAY_BUFFER, g.pos, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aPosition);
+  gl.vertexAttribPointer(loc.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+  const bUv = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bUv);
+  gl.bufferData(gl.ARRAY_BUFFER, g.uv, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aTexCoord);
+  gl.vertexAttribPointer(loc.aTexCoord, 2, gl.FLOAT, false, 0, 0);
+
+  const bIdx = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.idx, gl.STATIC_DRAW);
+
+  gl.bindVertexArray(null);
+  return { vao: vao, count: g.idx.length };
+}
+
+/* 轨道线 VAO：数据一次性上传，绘制时不再动 buffer。
+   原写法在 bindVertexArray 之后调 bufferData，而 VAO 不恢复 ARRAY_BUFFER 绑定，
+   会覆盖掉别的 VBO 数据。 */
+function buildCircleVAO(radius, segs){
+  const c = createCircle(radius, segs);
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, c.pos, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.laPosition);
+  gl.vertexAttribPointer(loc.laPosition, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindVertexArray(null);
+  return { vao: vao, count: c.count };
+}
+
+function buildPointsVAO(positions, sizes){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const bPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos);
+  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.paPosition);
+  gl.vertexAttribPointer(loc.paPosition, 3, gl.FLOAT, false, 0, 0);
+
+  const bSize = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bSize);
+  gl.bufferData(gl.ARRAY_BUFFER, sizes, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.paSize);
+  gl.vertexAttribPointer(loc.paSize, 1, gl.FLOAT, false, 0, 0);
+
+  gl.bindVertexArray(null);
+  return { vao: vao, count: positions.length / 3 };
+}
+
+const sphereVAO = buildSphereVAO();
+const ringGeo   = buildRingVAO(RING_INNER, RING_OUTER);
+
+PLANETS.forEach(function(p){ p.orbitGeo = buildCircleVAO(p.orbit, 240); });
+const moonOrbitGeo = buildCircleVAO(MOON_ORBIT, 120);
+
+/* ---- 星空：球壳上均匀撒点 ---- */
+const starGeo = (function(){
+  const N = 1800;
+  const pos = new Float32Array(N * 3);
+  const siz = new Float32Array(N);
+  for(let i = 0; i < N; i++){
+    const u = Math.random() * 2 - 1;
+    const th = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    const R = 190 + Math.random() * 90;
+    pos[i*3]   = R * s * Math.cos(th);
+    pos[i*3+1] = R * u;
+    pos[i*3+2] = R * s * Math.sin(th);
+    /* 亮度分布：少量亮星 + 大量暗星，比均匀分布更接近真实星空 */
+    siz[i] = Math.pow(Math.random(), 2.6) * 3.0 + 0.7;
+  }
+  return buildPointsVAO(pos, siz);
+})();
+
+/* ---- 小行星带（E1）：位于火星与木星之间 ---- */
+const beltGeo = (function(){
+  const N = 4500;
+  const pos = new Float32Array(N * 3);
+  const siz = new Float32Array(N);
+  const inner = 11.3, outer = 13.5;
+  for(let i = 0; i < N; i++){
+    const rad = inner + Math.random() * (outer - inner);
+    const a = Math.random() * Math.PI * 2;
+    pos[i*3]   = rad * Math.cos(a);
+    pos[i*3+2] = rad * Math.sin(a);
+    /* 小行星带整体很扁，只有个位数度的弥散 */
+    pos[i*3+1] = (Math.random() - 0.5) * 2 * (0.14 + Math.random() * 0.20);
+    siz[i] = 0.8 + Math.random() * 1.7;
+  }
+  return buildPointsVAO(pos, siz);
+})();
+
+/* ==========================================================================
+   7. 纹理
+   ========================================================================== */
+const texCache = {};
+const texStatus = { ok: 0, need: 0, failed: [] };
+
+function blankTexture(){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                new Uint8Array([150, 150, 158, 255]));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return t;
+}
+
+function loadTex(file, key){
+  if(texCache[key]) return texCache[key];
+  const t = blankTexture();
+  texCache[key] = t;
+  texStatus.need++;
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function(){
+    gl.bindTexture(gl.TEXTURE_2D, t);
+
+    /* UNPACK_FLIP_Y_WEBGL 必须在 texImage2D 之前设置。
+       原因：图片原点在左上、v 轴向下；纹理原点在左下、v 轴向上。
+       不翻转会把图片顶部贴到球体南极，地球看起来是倒的。
+       这是全局像素存储状态，用完必须复位，否则污染后续所有上传。 */
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    /* 两极 v 恰好取到 0 和 1，REPEAT 会在极点拉出接缝，故用 CLAMP */
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    texStatus.ok++;
+    refreshTexStat();
+  };
+  img.onerror = function(){
+    console.warn('[纹理] 加载失败：textures/' + file);
+    texStatus.failed.push(file);
+    refreshTexStat();
+  };
+  img.src = 'textures/' + file;
+  return t;
+}
+
+/* 贴图状态提示 + 失败横幅。
+   失败横幅直接压到画面顶部中央，因为它是最常见的「行星看起来不对」的原因：
+   file:// 下 fetch/img 被同源策略拦掉、文件名大小写不符、贴图没放进 textures/ 等，
+   都会让球体退回中性灰占位色，此时光有面板里的小字提示很难被注意到。 */
+function refreshTexStat(){
+  const el = document.getElementById('texStat');
+  if(!el) return;
+  const miss = texStatus.need - texStatus.ok;
+  el.textContent = miss <= 0
+    ? '✓ 贴图 ' + texStatus.ok + '/' + texStatus.need + ' 全部加载'
+    : '贴图 ' + texStatus.ok + '/' + texStatus.need + '（未回 ' + miss + '）';
+  el.style.color = miss <= 0 ? '#5a9' : '#e86';
+  el.style.borderColor = miss <= 0 ? 'rgba(90,140,120,.28)' : 'rgba(200,120,60,.55)';
+
+  const tip = document.getElementById('texTip');
+  if(tip){
+    if(texStatus.failed.length > 0){
+      tip.textContent = '⚠ ' + texStatus.failed.length + ' 张贴图加载失败：'
+                      + texStatus.failed.join('、')
+                      + '　—— 行星会用灰色占位，请检查 textures/ 目录与文件名大小写';
+      tip.style.display = 'block';
+    } else {
+      tip.style.display = 'none';
+    }
+  }
+}
+
+/* ==========================================================================
+   8. 矩阵栈
+   --------------------------------------------------------------------------
+   【关键】不能写 push(m){ stack.push(mat4(m)) }：
+     本站 MV.js 的 mat4(单个矩阵参数) 会把整个矩阵塞进 out[0][0]，
+     得到第 1~3 行全是 undefined 的废矩阵。
+   改为直接保存引用（mult 每次返回新对象，不存在被改写风险），
+   并让栈顶通过 currentMV() 显式参与运算，栈才真正起作用。
+   ========================================================================== */
+const matrixStack = [];
+
+function pushMatrix(m){ matrixStack.push(m); }
+function popMatrix(){
+  if(matrixStack.length === 0){ console.warn('popMatrix: 栈已空'); return null; }
+  return matrixStack.pop();
+}
+function currentMV(){ return matrixStack[matrixStack.length - 1]; }
+
+/* 必须用 MV.js 自带的 flatten()：它把行主序矩阵转置成列主序 Float32Array，
+   正是 uniformMatrix4fv 需要的。自己写「按行拍平」等于上传转置矩阵，
+   平移量会落到 m[3][0..2]（透视项）而不是 m[12..14]，画面完全错乱。 */
+function setMat4(name, mat){ gl.uniformMatrix4fv(name, false, flatten(mat)); }
+
+/* 法线矩阵直接用 MV.js 自带的 normalMatrix()：
+   它内部做 inverse(transpose(m)) 再取左上 3x3，返回 mat3 对象，
+   交给 flatten() 后正好是 GLSL mat3 需要的列主序。
+   注意：本站 MV.js 的 normalMatrix 要求入参带 .type=='mat4'，
+   所以传入的必须是 mult()/rotate()/lookAt() 等函数返回的对象，不能是裸数组。 */
+function normalMatrixFrom(mv){
+  /* 直接调用库函数；传 false 之外的默认行为是返回 mat3 对象（行主序），
+     flatten() 会完成转置，得到 GLSL mat3 需要的 9 个浮点数。 */
+  return normalMatrix(mv);
+}
+
+/* ==========================================================================
+   9. 轨迹球（E3）
+   --------------------------------------------------------------------------
+   鼠标位置映射到单位虚拟球，两次球面点求「转轴 + 夹角」，累积成四元数。
+   相比欧拉角：无万向节死锁，越过极点连续，任意方向的拖拽手感一致。
+   ========================================================================== */
+function projectToSphere(sx, sy){
+  const rect = canvas.getBoundingClientRect();
+  let x = (sx - rect.left) / rect.width  * 2 - 1;
+  let y = -((sy - rect.top) / rect.height * 2 - 1);
+  /* 留边：把映射区域缩到画布中央 90%，边缘留白手感更稳 */
+  x /= 0.9; y /= 0.9;
+
+  const d2 = x*x + y*y;
+  let z;
+  if(d2 <= 0.5){
+    /* 球内：标准球面映射 */
+    z = Math.sqrt(1 - d2);
+  } else {
+    /* 球外：用双曲面延伸 z = 1/(2√d2)。
+       这样在 r=0.707 处球内外的 z 与导数都连续，
+       否则鼠标拖出球边界时旋转速度会突然跳变。 */
+    z = 0.5 / Math.sqrt(d2);
+  }
+  const len = Math.sqrt(x*x + y*y + z*z);
+  return [x/len, y/len, z/len];
+}
+
+function quatMul(a, b){
+  return [
+    a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1],
+    a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0],
+    a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3],
+    a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2]
+  ];
+}
+function quatNormalize(q){
+  const n = Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]) || 1;
+  return [q[0]/n, q[1]/n, q[2]/n, q[3]/n];
+}
+function quatFromAxisAngle(axis, angle){
+  const n = Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]) || 1;
+  const s = Math.sin(angle/2) / n;
+  return [axis[0]*s, axis[1]*s, axis[2]*s, Math.cos(angle/2)];
+}
+/* 两个球面点之间的弧 → 旋转四元数（弧的转轴 = 叉积） */
+function quatFromArc(p1, p2){
+  const ax = p1[1]*p2[2] - p1[2]*p2[1];
+  const ay = p1[2]*p2[0] - p1[0]*p2[2];
+  const az = p1[0]*p2[1] - p1[1]*p2[0];
+  const dot = p1[0]*p2[0] + p1[1]*p2[1] + p1[2]*p2[2];
+  const len = Math.sqrt(ax*ax + ay*ay + az*az);
+  if(len < 1e-9) return [0,0,0,1];
+  const ang = Math.acos(Math.max(-1, Math.min(1, dot)));
+  const s = Math.sin(ang / 2) / len;
+  return [ax*s, ay*s, az*s, Math.cos(ang / 2)];
+}
+function quatToMat3(q){
+  const x=q[0], y=q[1], z=q[2], w=q[3];
+  const xx=x*x, yy=y*y, zz=z*z;
+  const xy=x*y, xz=x*z, yz=y*z;
+  const wx=w*x, wy=w*y, wz=w*z;
+  return [
+    [1-2*(yy+zz), 2*(xy-wz),   2*(xz+wy)  ],
+    [2*(xy+wz),   1-2*(xx+zz), 2*(yz-wx)  ],
+    [2*(xz-wy),   2*(yz+wx),   1-2*(xx+yy)]
+  ];
+}
+
+/* 基准视线方向：斜上方，稍偏右 */
+const BASE_EYE_DIR = [0.54, 0.44, 0.72];
+
+function cameraEye(){
+  const R = quatToMat3(trackballQuat);
+  const d = [
+    R[0][0]*BASE_EYE_DIR[0] + R[0][1]*BASE_EYE_DIR[1] + R[0][2]*BASE_EYE_DIR[2],
+    R[1][0]*BASE_EYE_DIR[0] + R[1][1]*BASE_EYE_DIR[1] + R[1][2]*BASE_EYE_DIR[2],
+    R[2][0]*BASE_EYE_DIR[0] + R[2][1]*BASE_EYE_DIR[1] + R[2][2]*BASE_EYE_DIR[2]
+  ];
+  const len = Math.sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]) || 1;
+  return vec3(d[0]/len*camDist, d[1]/len*camDist, d[2]/len*camDist);
+}
+/* up 向量也要跟着转，否则视角越过极点时画面会翻转 */
+function cameraUp(){
+  const R = quatToMat3(trackballQuat);
+  return vec3(R[0][1], R[1][1], R[2][1]);
+}
+
+/* ==========================================================================
+   10. 轨道计算
+   ========================================================================== */
+function planetRevolveM(p, time){
+  /* 轨道倾角：绕 Z 轴倾斜轨道面。因为行星初始位于 +X 轴上，
+     只有绕 Z 轴旋转才能把它抬离黄道面（Y 分量变化）；
+     绕 X 轴旋转时 (x,0,0) 是不动点，倾角会完全失效。 */
+  const inclM  = rotate(p.incl, vec3(0, 0, 1));
+  /* 公转：时间的线性函数 + 初相位 */
+  const revDeg = (time * p.period * 6 + p.phase) * 180 / Math.PI;
+  const revM   = rotate(revDeg, vec3(0, 1, 0));
+  const transM = translate(p.orbit, 0, 0);
+  /* 顺序：先倾斜轨道面，再在倾斜后的面内公转并推出半径。
+     若把 inclM 放最里（mult(revM, mult(transM, inclM))），
+     倾斜的将是行星本体而非轨道面。 */
+  /* revDeg 一并返回：日食/月食演示要用它把月球对齐到日地连线，
+     比用 atan2 反推地球方位角更可靠（避免旋转方向的符号约定问题）。 */
+  return { inclM: inclM, revDeg: revDeg, full: mult(inclM, mult(revM, transM)) };
+}
+
+let earthWorldPos = [0, 0, 0];
+let moonWorldPos  = [0, 0, 0];
+let earthRevDeg   = 0;      // 地球当前公转角（度），日月食演示对齐用
+/* 默认光照方向（视图空间）：由 render() 每帧根据相机更新，
+   仅作为没有传 lightPos 时的兜底值。 */
+let lightDirVS = [0, 0, -1];
+/* 太阳在视图空间的位置（= view 的平移列）。drawSphere 用它和天体位置
+   求「指向太阳」的方向。 */
+let sunPosVS = [0, 0, 0];
+
+/* ==========================================================================
+   11. 绘制
+   ========================================================================== */
+function drawSphere(tex, mv, proj, opt){
+  opt = opt || {};
+  gl.useProgram(program);
+  gl.bindVertexArray(sphereVAO);
+
+  setMat4(loc.uModelView, mv);
+  setMat4(loc.uProjection, proj);
+  gl.uniformMatrix3fv(loc.uNormalMat, false, flatten(normalMatrixFrom(mv)));
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(loc.uTex, 0);
+
+  /* ---- 光照方向（视图空间）----
+     【重要，本项目最隐蔽的一个 bug】
+     1) 不能全场景共用一个常量方向：每个天体位置不同，
+        「从它指向太阳」的方向必然不同。共用会导致绕到太阳背后的行星
+        永远处于背光面，配合很低的 ambient 就变成「一片黑」。
+     2) 符号不能取反：太阳在世界原点，view 把世界变换到视图空间，
+        于是太阳的视图空间坐标 = view 的平移列 T = (view[0][3], view[1][3], view[2][3])。
+        「从 P 指向太阳」= normalize(T − P)。当 P 是相机（视图空间原点）
+        时就是 normalize(T) 本身，**不能写成 normalize(−T)**。
+        写成 −T 会把光照整个翻到背面：朝阳面死黑、背阳面反而亮。
+
+     调用方通过 opt.lightPos 传入该天体在【视图空间】的位置。
+     selfLit（太阳本身）不需要方向。 */
+  let lx = lightDirVS[0], ly = lightDirVS[1], lz = lightDirVS[2];
+  if(opt.lightPos){
+    /* 直接算 (T − P) 再归一化：T 就是 view 的平移列，已由 render() 存进 sunPosVS。
+       不做任何「取反再还原」的花招，避免符号约定被绕乱。 */
+    const px = opt.lightPos[0], py = opt.lightPos[1], pz = opt.lightPos[2];
+    const tx = sunPosVS[0], ty = sunPosVS[1], tz = sunPosVS[2];
+    const dx = tx - px, dy = ty - py, dz = tz - pz;
+    const dl = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if(dl > 1e-6){ lx = dx/dl; ly = dy/dl; lz = dz/dl; }
+  }
+  gl.uniform3f(loc.uLightDir, lx, ly, lz);
+
+  gl.uniform1f(loc.uSelfLit, opt.selfLit ? 1.0 : 0.0);
+  gl.uniform1f(loc.uAmbient, opt.ambient === undefined ? 0.05 : opt.ambient);
+  gl.uniform4f(loc.uTint, 1, 1, 1, 1);
+
+  gl.drawElements(gl.TRIANGLES, sphereGeo.idx.length, gl.UNSIGNED_SHORT, 0);
+}
+
+function drawOrbitLine(geo, mv, proj, alpha){
+  gl.useProgram(lineProg);
+  gl.bindVertexArray(geo.vao);
+
+  setMat4(loc.luModelView, mv);
+  setMat4(loc.luProjection, proj);
+  gl.uniform4f(loc.luColor, 0.32, 0.40, 0.56, alpha === undefined ? 0.5 : alpha);
+  gl.uniform1f(loc.luFade, 1.0);
+
+  gl.drawArrays(gl.LINE_STRIP, 0, geo.count);
+}
+
+function drawPoints(geo, mv, proj, r, g, b, a, perspective){
+  gl.useProgram(pointProg);
+  gl.bindVertexArray(geo.vao);
+
+  setMat4(loc.puModelView, mv);
+  setMat4(loc.puProjection, proj);
+  gl.uniform1f(loc.puPerspective, perspective ? 1.0 : 0.0);
+  gl.uniform4f(loc.puColor, r, g, b, a);
+
+  gl.drawArrays(gl.POINTS, 0, geo.count);
+}
+
+/* 土星环是半透明物体，必须：
+   · 开启混合
+   · 关深度写入（depthMask(false)），否则环自己前后遮挡会产生硬边
+   · 关背面剔除，环的上下两面都要能看见 */
+function drawSaturnRing(tex, mv, proj){
+  gl.useProgram(program);
+  gl.bindVertexArray(ringGeo.vao);
+
+  setMat4(loc.uModelView, mv);
+  setMat4(loc.uProjection, proj);
+  gl.uniformMatrix3fv(loc.uNormalMat, false, flatten(normalMatrixFrom(mv)));
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(loc.uTex, 0);
+
+  gl.uniform1f(loc.uSelfLit, 0.55);
+  gl.uniform1f(loc.uAmbient, 0.30);
+  gl.uniform4f(loc.uTint, 1.0, 0.97, 0.92, 0.95);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.disable(gl.CULL_FACE);
+
+  gl.drawElements(gl.TRIANGLES, ringGeo.count, gl.UNSIGNED_INT, 0);
+
+  gl.enable(gl.CULL_FACE);
+  gl.depthMask(true);
+}
+
+/* ==========================================================================
+   12. 日月食判定（E2）
+   --------------------------------------------------------------------------
+   太阳是面光源，遮挡体背后形成两个锥：
+
+   1) 本影锥（umbra）—— 完全看不到太阳
+      长度   Lu = d · Rb / (Rs − Rb)
+      在沿轴距离 x 处的半径   Ru(x) = Rb − x · (Rs − Rb) / (d − Rb)
+
+   2) 半影锥（penumbra）—— 只看到部分太阳
+      在距离 x 处的半径       Rp(x) = Rb + x · (Rs + Rb) / (d − Rb)
+
+   判定某天体 P：把 P 相对遮挡体的向量投影到轴线上
+      x = 沿轴距离，p = 垂距
+      · p + rP < Ru(x)  → P 完全在本影内，全食
+      · p − rP < Rp(x)  → 部分进入半影，偏食
+   ========================================================================== */
+function shadowInfo(occCenter, occRadius, targetCenter, targetRadius, Rs){
+  /* 轴线方向：从太阳指向遮挡体。太阳在原点，所以就是遮挡体位置的方向。 */
+  const alen = Math.sqrt(occCenter[0]*occCenter[0] +
+                         occCenter[1]*occCenter[1] +
+                         occCenter[2]*occCenter[2]);
+  if(alen < 1e-6) return { umbra:0, penumbra:0, s:0, p:0, uR:0, pR:0, behind:false };
+
+  const ux = occCenter[0]/alen, uy = occCenter[1]/alen, uz = occCenter[2]/alen;
+
+  const dx = targetCenter[0] - occCenter[0];
+  const dy = targetCenter[1] - occCenter[1];
+  const dz = targetCenter[2] - occCenter[2];
+
+  /* 沿轴线投影，带符号：
+       s > 0 → 目标在遮挡体「背光侧」，锥体真正存在的地方
+       s < 0 → 目标在遮挡体「朝阳侧」，光照不会被挡住 */
+  const s = dx*ux + dy*uy + dz*uz;
+
+  /* 垂距 */
+  const px = dx - s*ux, py = dy - s*uy, pz = dz - s*uz;
+  const p  = Math.sqrt(px*px + py*py + pz*pz);
+
+  /* 目标在朝阳侧，或几乎与遮挡体重合 → 没有影 */
+  if(s <= 1e-6) return { umbra:0, penumbra:0, s:s, p:p, uR:0, pR:0, behind:false };
+
+  /* 本影锥自遮挡体边缘向内收缩，锥尖距遮挡体
+       Lu = Rb·d/(Rs − Rb)
+     在轴向距离 s 处半径  Ru = Rb − s·(Rs − Rb)/d，收束后恒为 0。 */
+  let uR = occRadius - s * (Rs - occRadius) / alen;
+  if(uR < 0) uR = 0;
+
+  /* 半影锥向外张开  Rp = Rb + s·(Rs + Rb)/d */
+  const pR = occRadius + s * (Rs + occRadius) / alen;
+
+  /* 全食：目标整体落在本影截面内；部分覆盖按面积线性过渡 */
+  let U = 0;
+  if(uR > 0){
+    if(p + targetRadius <= uR)      U = 1;
+    else if(p < uR + targetRadius)  U = (uR + targetRadius - p) / (2 * targetRadius);
+  }
+  U = Math.max(0, Math.min(1, U));
+
+  /* 偏食 / 半影食：目标边缘触到半影锥 */
+  let Pn = 0;
+  if(p - targetRadius < pR){
+    Pn = Math.min(1, (pR + targetRadius - p) / (2 * targetRadius));
+  }
+  Pn = Math.max(0, Math.min(1, Pn));
+
+  return { umbra:U, penumbra:Pn, s:s, p:p, uR:uR, pR:pR, behind:true };
+}
+
+/* ==========================================================================
+   13. 渲染主循环
+   ========================================================================== */
+const hud     = document.getElementById('hud');
+const banner  = document.getElementById('eclipseBanner');
+let fpsAcc = 0, fpsFrames = 0;
+
+function render(timestamp){
+  const rawDt = lastFrame ? Math.min((timestamp - lastFrame) / 1000, 0.05) : 0.016;
+  lastFrame = timestamp;
+  const dt = rawDt * cfg.timeScale;
+
+  /* ---- 自动漫游：用四元数累积，绕世界 Y 轴转 + 轻微俯仰摆动 ---- */
+  if(cfg.roam && !isDrag){
+    roamT += rawDt;
+    const yawQ = quatFromAxisAngle([0, 1, 0], rawDt * 0.11);
+    const pitchQ = quatFromAxisAngle([1, 0, 0], Math.sin(roamT * 0.21) * rawDt * 0.05);
+    const q = quatNormalize(quatMul(pitchQ, quatMul(yawQ, trackballQuat)));
+    trackballQuat[0]=q[0]; trackballQuat[1]=q[1]; trackballQuat[2]=q[2]; trackballQuat[3]=q[3];
+  }
+  simTime += dt;
+  const time = simTime;
+
+  /* ---- 清屏 ---- */
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.004, 0.006, 0.012, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  /* ---- 相机 ---- */
+  let eye = cameraEye();
+  let at  = vec3(0, 0, 0);
+
+  /* 追踪地球：视点移到地球，相机整体平移，便于近距观察日月食 */
+  if(cfg.track){
+    at  = vec3(earthWorldPos[0], earthWorldPos[1], earthWorldPos[2]);
+    eye = vec3(eye[0] * 0.6 + at[0], eye[1] * 0.6 + at[1], eye[2] * 0.6 + at[2]);
+  }
+
+  const view = lookAt(eye, at, cameraUp());
+
+  const aspect = canvas.width / Math.max(canvas.height, 1);
+  let proj;
+  if(projectionMode === 'persp'){
+    /* MV.js 的 perspective 内部已调 radians()，这里必须传「角度」。
+       写成 perspective(radians(60), ...) 会二次换算，视野塌缩到 1° 左右。 */
+    proj = perspective(cfg.track ? 40 : 52, aspect, 0.05, 500);
+  } else {
+    const s = camDist * 0.52;
+    proj = ortho(-s * aspect, s * aspect, -s, s, -500, 500);
+  }
+
+  /* ---- 渲染状态 ---- */
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+
+  /* ---- 星空：最先画，不写深度，当背景板 ---- */
+  if(cfg.drawStars){
+    gl.depthMask(false);
+    drawPoints(starGeo, view, proj, 1.0, 0.98, 0.95, 0.85, 0.0);
+    gl.depthMask(true);
+  }
+
+  /* ---- 太阳光方向（视图空间）----
+     太阳在世界原点，view 把世界变换到视图空间，所以太阳在视图空间的位置
+     就是 view 的平移列 (view[0][3], view[1][3], view[2][3])。
+     注意这里【不取负号】：它就是太阳在视图空间的坐标。
+     每个天体真正使用的光照方向由 drawSphere 的 opt.lightPos 单独计算，
+     因为每个行星的位置不同，方向必须各自算。 */
+  {
+    sunPosVS = [view[0][3], view[1][3], view[2][3]];
+    const sl = Math.sqrt(sunPosVS[0]*sunPosVS[0] + sunPosVS[1]*sunPosVS[1] +
+                         sunPosVS[2]*sunPosVS[2]) || 1;
+    lightDirVS = [sunPosVS[0]/sl, sunPosVS[1]/sl, sunPosVS[2]/sl];
+  }
+
+  /* ======================================================================
+     层级 0：太阳（世界坐标系根节点）
+     ====================================================================== */
+  pushMatrix(view);
+  {
+    /* 太阳自转 */
+    const sunSpin = rotate(time * 4 * cfg.vSpin, vec3(0, 1, 0));
+    const sunMV = mult(currentMV(), mult(sunSpin, scale(SUN_R, SUN_R, SUN_R)));
+    drawSphere(loadTex('sun.jpg', 'sun'), sunMV, proj, { selfLit:true, ambient:1.0 });
+
+    /* ---- E1：小行星带 ---- */
+    if(cfg.drawBelt){
+      const beltSpin = rotate(time * 1.3 * cfg.vOrbit, vec3(0, 1, 0));
+      drawPoints(beltGeo, mult(currentMV(), beltSpin), proj,
+                 0.74, 0.68, 0.60, 0.80, projectionMode === 'persp');
+    }
+
+    /* ====================================================================
+       层级 1：八大行星
+       ==================================================================== */
+    for(let i = 0; i < PLANETS.length; i++){
+      const p = PLANETS[i];
+      const rev = planetRevolveM(p, time);
+
+      /* 轨道线：只施加轨道倾角，让它躺在倾斜后的轨道面上 */
+      if(cfg.drawOrbit){
+        drawOrbitLine(p.orbitGeo, mult(currentMV(), rev.inclM), proj, 0.38);
+      }
+
+      /* 自转轴倾角先在局部施加，再叠加公转：
+         localM = tiltM × spinM
+         作用到顶点从右往左：先自转，再倾斜。
+         这样自转轴是「固定倾斜」的，四季成因才正确。
+         若写成 spinM × tiltM，地轴会被自转带着摇摆。 */
+      const tiltM  = rotate(p.tilt, vec3(0, 0, 1));
+      const spinM  = rotate(time * p.spin * 30 * cfg.vSpin, vec3(0, 1, 0));
+      const localM = mult(tiltM, spinM);
+
+      const worldM  = mult(rev.full, localM);
+      /* pivotMV 是「视图 × 世界」，用于渲染；
+         earthWorldPos 必须用纯世界矩阵 rev.full 计算，
+         否则拿到的是视图空间坐标，日月食判定会完全错位。 */
+      const pivotMV = mult(currentMV(), rev.full);    /* 行星球心（视图空间） */
+
+      const planetMV = mult(currentMV(), mult(worldM, scale(p.r, p.r, p.r)));
+
+      /* 把行星球心变换到视图空间，交给 drawSphere 算「指向太阳」的方向。
+         currentMV() 此刻是 view（层级根），所以 currentMV()·rev.full 的
+         平移列就是球心的视图空间坐标。 */
+      const pivotVS = mult(currentMV(), rev.full);
+      const lightPos = [pivotVS[0][3], pivotVS[1][3], pivotVS[2][3]];
+
+      drawSphere(loadTex(p.tex, p.name), planetMV, proj, { ambient:0.20, lightPos:lightPos });
+
+      /* 记录地球世界坐标（不带 view），日月食判定与追踪相机都要用 */
+      if(p.isEarth){
+        earthWorldPos = [rev.full[0][3], rev.full[1][3], rev.full[2][3]];
+        /* 地球公转角也要记下来，供月球对齐日地连线 */
+        earthRevDeg = rev.revDeg;
+      }
+
+      /* ---- E1：土星环 ---- */
+      if(p.hasRing && cfg.drawRing){
+        /* 环平面与赤道面一致：施加相同倾角，但不随自转（圆环转了看不出差别） */
+        const ringM  = mult(rev.full, mult(tiltM, scale(p.r, p.r, p.r)));
+        drawSaturnRing(loadTex('saturn_ring.png', 'saturn_ring'),
+                       mult(currentMV(), ringM), proj);
+      }
+
+      /* ==================================================================
+         层级 2：地月系统
+         ================================================================== */
+      if(p.isEarth){
+        /* ---- 月球公转角度 ----
+           正常模式：moonRevDeg 随时间线性增长（固定角速度）。
+
+           演示模式：把月球摆到「太阳 — 地球」连线上。这里有个必须想清楚的坑：
+
+           月球的局部矩阵最后是乘在 rev.full 内部的（moonWorld = rev.full · moonLocal），
+           而 rev.full 里已经含了地球的 R(θe)。所以 moonRevDeg 不是最终朝向，
+           它会被 R(θe) 再叠加一次：
+
+               moonWorld 偏移 = R(θe) · R(moonRevDeg) · (MOON_ORBIT, 0, 0)
+                              = R(θe + moonRevDeg) · (MOON_ORBIT, 0, 0)
+
+           要指向太阳（−E 方向，即 θe+180）：
+               θe + moonRevDeg = θe + 180  →  moonRevDeg = 180   （日食）
+           要指向背光侧（+E 方向，即 θe）：
+               θe + moonRevDeg = θe        →  moonRevDeg = 0     （月食）
+
+           两个值都是常数、与地球转到哪里无关——因为差值正好把 θe 消掉了。
+           这也符合直觉：演示时月球就是被「吸附」在日地连线的某一端。
+
+           （若误把它当成绝对角、写成 θe 或 θe+180，那么 θe 会被加两次，
+             月球就跑到连线两侧去了——这是本项目实际踩过的坑。） */
+        let moonRevDeg;
+        if(eclipseMode !== 'none'){
+          moonRevDeg = (eclipseMode === 'solar') ? 180 : 0;
+        } else {
+          moonRevDeg = time * 8.5 * cfg.vOrbit * 180 / Math.PI;
+        }
+
+        /* 手动 mult 逐级拼接月球局部矩阵：
+             moonLocal = 轨道倾角 × 公转 × 平移(轨道半径) × 自转
+           作用到顶点时从右往左执行：
+             ① 自转（潮汐锁定，与公转同角速度，始终同一面朝向地球）
+             ② 沿 +X 推出轨道半径
+             ③ 绕 Y 轴公转
+             ④ 轨道面倾斜 —— 必须在最外层
+
+           倾角绕 Z 轴而不是 X 轴：月球初始位于 +X 轴上，
+           绕 X 轴旋转时 (x,0,0) 是不动点，倾角会完全失效（Y 恒为 0）。
+           绕 Z 轴才能把轨道面抬离黄道。
+
+           倾角放最外层的原因：它描述的是「轨道面相对黄道的姿态」，
+           是轨道整体的属性，必须作用在公转与半径平移之后的结果上。
+           放最内层被倾斜的将是月球本体，而不是轨道面。
+
+           演示日月食时必须把倾角临时收掉（用 eclipseTilt 代替 cfg.moonTilt）：
+           倾角是绕世界 Z 轴的，倾角 5.1° 会把月球从黄道面抬起
+           MOON_ORBIT·sin(5.1°) ≈ 0.093；而在日月食演示里月球被强制放到
+           「日—地」连线上，这条连线本身可能几乎平行于 Z 轴，
+           此时那 0.093 的抬升会被放大成 0.47 的垂距（轴线很短，垂距被放大），
+           月球就整个滑出影锥了。真实世界里食季正是月球轨道面与黄道面的
+           交线扫过日地连线的时刻，倾角的影响本来就归零，所以收掉是合理的。 */
+        const moonTiltDeg = (eclipseMode !== 'none') ? 0 : cfg.moonTilt;
+        const moonOrbitTiltM = rotate(moonTiltDeg, vec3(0, 0, 1));
+        const moonRevolveM   = rotate(moonRevDeg, vec3(0, 1, 0));
+        const moonTransM     = translate(MOON_ORBIT, 0, 0);
+        const moonSpinM      = rotate(moonRevDeg, vec3(0, 1, 0));
+
+        const moonLocal = mult(moonOrbitTiltM,
+                          mult(moonRevolveM,
+                          mult(moonTransM, moonSpinM)));
+
+        const moonMV = mult(pivotMV, mult(moonLocal, scale(MOON_R, MOON_R, MOON_R)));
+
+        /* 月球世界坐标同样要用纯世界矩阵算：
+           世界 = 地球世界 × 月球局部，不能带 view。 */
+        const moonWorld = mult(rev.full, moonLocal);
+        moonWorldPos = [moonWorld[0][3], moonWorld[1][3], moonWorld[2][3]];
+
+        /* 月球同样要按自己的位置算光照方向，否则它永远只有一面亮 */
+        const moonVS = mult(currentMV(), moonWorld);
+        drawSphere(loadTex('moon.jpg', 'moon'), moonMV, proj, {
+          ambient: 0.20,
+          lightPos: [moonVS[0][3], moonVS[1][3], moonVS[2][3]]
+        });
+
+        /* 月球轨道线：挂在地球位置，只施加轨道倾角 */
+        if(cfg.drawOrbit){
+          drawOrbitLine(moonOrbitGeo, mult(pivotMV, moonOrbitTiltM), proj, 0.30);
+        }
+      }
+    }
+  }
+  popMatrix();
+
+  /* ======================================================================
+     E2：日月食判定
+     ====================================================================== */
+  eclipseActive = null;
+  {
+    /* 两种次序，各自只在「目标位于遮挡体背光侧」时才成立：
+
+         ① 太阳 → 月球 → 地球：月影落到地球上  → 日食
+         ② 太阳 → 地球 → 月球：地影落到月球上  → 月食
+
+       shadowInfo 返回的 s 就是目标沿轴线（太阳→遮挡体）的投影：
+         s > 0 目标在背光侧，锥体成立；
+         s < 0 目标在朝阳侧，函数直接返回 0。
+       因此同一次调用里若 s < 0，这一项必然全 0，不会误判。 */
+    const lunarSh = shadowInfo(earthWorldPos, ECLIPSE_EARTH_R, moonWorldPos, ECLIPSE_MOON_R, SUN_R_LUNAR);
+    const solarSh = shadowInfo(moonWorldPos, ECLIPSE_MOON_R, earthWorldPos, EARTH_SHADOW_R, SUN_R_SOLAR);
+
+    /* 阈值：umbra = 1 表示目标整个落在本影里（全食）；
+       penumbra 是目标被半影覆盖的比例，> 0.55 视为偏食。
+       日食优先——月球的本影扫过地面比月球自己进地影更具观赏性。 */
+    if(solarSh.umbra > 0.30)          eclipseActive = { type:'solar', level:'全食' };
+    else if(solarSh.penumbra > 0.75)  eclipseActive = { type:'solar', level:'偏食' };
+    else if(lunarSh.umbra > 0.60)     eclipseActive = { type:'lunar', level:'全食' };
+    else if(lunarSh.penumbra > 0.75)  eclipseActive = { type:'lunar', level:'偏食' };
+  }
+
+  if(eclipseActive){
+    banner.textContent = (eclipseActive.type === 'solar' ? '日' : '月') + eclipseActive.level;
+    banner.style.opacity = 0.95;
+  } else {
+    banner.style.opacity = 0;
+  }
+
+  /* ---- HUD ---- */
+  fpsAcc += rawDt; fpsFrames++;
+  if(fpsAcc >= 0.4){
+    let txt = (projectionMode === 'persp' ? '透视' : '正交')
+            + ' · ' + (cfg.roam ? '漫游' : '手动');
+    if(cfg.track) txt += ' · 追踪地球';
+    txt += ' · ' + (fpsFrames / fpsAcc).toFixed(0) + ' fps';
+    hud.textContent = txt;
+    fpsAcc = 0; fpsFrames = 0;
+  }
+
+  requestAnimationFrame(render);
+}
+
+/* ==========================================================================
+   14. 交互
+   ========================================================================== */
+function setProjection(mode){
+  projectionMode = mode;
+  document.getElementById('btnPersp').classList.toggle('on', mode === 'persp');
+  document.getElementById('btnOrtho').classList.toggle('on', mode === 'ortho');
+}
+
+function setRoam(on){
+  cfg.roam = on;
+  document.getElementById('roamChk').checked = on;
+}
+
+function resetView(){
+  trackballQuat[0]=0; trackballQuat[1]=0; trackballQuat[2]=0; trackballQuat[3]=1;
+  camDist = cfg.track ? CAM_NEAR : CAM_FAR;
+}
+
+function startEclipse(kind){
+  eclipseMode = kind;
+  cfg.track = true;
+  cfg.roam = false;
+  document.getElementById('trackChk').checked = true;
+  document.getElementById('roamChk').checked = false;
+  camDist = CAM_NEAR;
+  document.getElementById('btnSolar').classList.toggle('on', kind === 'solar');
+  document.getElementById('btnLunar').classList.toggle('on', kind === 'lunar');
+}
+
+function stopEclipse(){
+  eclipseMode = 'none';
+  document.getElementById('btnSolar').classList.remove('on');
+  document.getElementById('btnLunar').classList.remove('on');
+}
+
+function bindUI(){
+  const $ = function(id){ return document.getElementById(id); };
+
+  const sliders = [
+    ['vOrbit',    function(v){ cfg.vOrbit = v;    $('vOrbitVal').textContent = v.toFixed(2); }],
+    ['vSpin',     function(v){ cfg.vSpin = v;     $('vSpinVal').textContent = v.toFixed(2); }],
+    ['timeScale', function(v){ cfg.timeScale = v; $('timeScaleVal').textContent = v.toFixed(2); }],
+    ['earthTilt', function(v){ cfg.earthTilt = v; $('tiltVal').textContent = v.toFixed(1); }],
+    ['moonTilt',  function(v){ cfg.moonTilt = v;  $('moonTiltVal').textContent = v.toFixed(1); }],
+  ];
+  sliders.forEach(function(s){
+    const el = $(s[0]);
+    s[1](parseFloat(el.value));
+    el.oninput = function(){ s[1](parseFloat(this.value)); };
+  });
+
+  const checks = [
+    ['drawOrbit',  function(v){ cfg.drawOrbit = v; }],
+    ['drawStars',  function(v){ cfg.drawStars = v; }],
+    ['drawBelt',   function(v){ cfg.drawBelt = v; }],
+    ['drawRing',   function(v){ cfg.drawRing = v; }],
+  ];
+  checks.forEach(function(c){
+    const el = $(c[0]);
+    c[1](el.checked);
+    el.onchange = function(){ c[1](this.checked); };
+  });
+
+  $('roamChk').onchange = function(){ cfg.roam = this.checked; };
+  $('trackChk').onchange = function(){
+    cfg.track = this.checked;
+    camDist = this.checked ? CAM_NEAR : CAM_FAR;
+  };
+
+  $('btnPersp').onclick = function(){ setProjection('persp'); };
+  $('btnOrtho').onclick = function(){ setProjection('ortho'); };
+  $('btnReset').onclick = resetView;
+
+  $('btnSolar').onclick = function(){ startEclipse('solar'); };
+  $('btnLunar').onclick = function(){ startEclipse('lunar'); };
+  $('btnEclOff').onclick = stopEclipse;
+}
+
+function bindEvents(){
+  window.addEventListener('keydown', function(e){
+    if(e.target && /input|textarea/i.test(e.target.tagName)) return;
+    switch(e.key){
+      case ' ':       e.preventDefault(); setRoam(!cfg.roam); break;
+      case 'o': case 'O': setProjection(projectionMode === 'persp' ? 'ortho' : 'persp'); break;
+      case '1':       startEclipse('solar'); break;
+      case '2':       startEclipse('lunar'); break;
+      case 'r': case 'R': resetView(); break;
+      case 'Escape':  stopEclipse(); break;
+    }
+  });
+
+  /* ---- 轨迹球拖拽 ---- */
+  let dragPrev = null;
+
+  canvas.addEventListener('mousedown', function(e){
+    isDrag = true;
+    setRoam(false);
+    dragPrev = projectToSphere(e.clientX, e.clientY);
+    canvas.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mouseup', function(){
+    isDrag = false; dragPrev = null;
+    canvas.style.cursor = 'grab';
+  });
+
+  window.addEventListener('mousemove', function(e){
+    if(!isDrag) return;
+    const cur = projectToSphere(e.clientX, e.clientY);
+    if(dragPrev){
+      /* 两球面点 → 一段弧 → 一个旋转，累乘到当前姿态 */
+      const dq = quatFromArc(dragPrev, cur);
+      const q = quatNormalize(quatMul(dq, trackballQuat));
+      trackballQuat[0]=q[0]; trackballQuat[1]=q[1]; trackballQuat[2]=q[2]; trackballQuat[3]=q[3];
+    }
+    dragPrev = cur;
+  });
+
+  canvas.addEventListener('wheel', function(e){
+    e.preventDefault();
+    /* 指数缩放：近处手感细腻，远处步子大 */
+    camDist *= Math.exp(e.deltaY * 0.0009);
+    camDist = Math.max(1.0, Math.min(180, camDist));
+  }, { passive: false });
+
+  /* ---- 触摸 ---- */
+  canvas.addEventListener('touchstart', function(e){
+    if(e.touches.length === 1){
+      isDrag = true; setRoam(false);
+      dragPrev = projectToSphere(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', function(e){
+    if(!isDrag || e.touches.length !== 1) return;
+    e.preventDefault();
+    const cur = projectToSphere(e.touches[0].clientX, e.touches[0].clientY);
+    if(dragPrev){
+      const dq = quatFromArc(dragPrev, cur);
+      const q = quatNormalize(quatMul(dq, trackballQuat));
+      trackballQuat[0]=q[0]; trackballQuat[1]=q[1]; trackballQuat[2]=q[2]; trackballQuat[3]=q[3];
+    }
+    dragPrev = cur;
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', function(){ isDrag = false; dragPrev = null; });
+
+  window.addEventListener('resize', resize);
+  canvas.style.cursor = 'grab';
+}
+
+function resize(){
+  const w = Math.max(1, window.innerWidth - 330);
+  const h = Math.max(1, window.innerHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width  = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+
+/* ==========================================================================
+   15. 启动
+   ========================================================================== */
+function init(){
+  resize();
+  bindUI();
+  bindEvents();
+
+  loadTex('sun.jpg', 'sun');
+  loadTex('moon.jpg', 'moon');
+  loadTex('saturn_ring.png', 'saturn_ring');
+  PLANETS.forEach(function(p){ loadTex(p.tex, p.name); });
+  refreshTexStat();
+
+  requestAnimationFrame(render);
+}
+
+init();
+</script>
+</body>
+</html>
