@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640">
+  <style>
+    .bg   { fill: #12151c; }
+    .card { fill: #1b2029; stroke: #2e3746; stroke-width: 1.5; rx: 10; }
+    .ttl  { fill: #e8edf5; font: 700 17px "Noto Serif CJK SC", "DejaVu Sans", sans-serif; }
+    .sub  { fill: #8b98ab; font: 13px "Noto Serif CJK SC", "DejaVu Sans", sans-serif; }
+    .code { fill: #7fd4a0; font: 12.5px "DejaVu Sans Mono", monospace; }
+    .body { fill: #b9c4d4; font: 13px "Noto Serif CJK SC", "DejaVu Sans", sans-serif; }
+    .tag  { fill: #1b2029; stroke: #2e3746; }
+    .arrow{ stroke: #4d9fd6; stroke-width: 2.2; fill: none; marker-end: url(#ah); }
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#4d9fd6"/>
+    </marker>
+    <marker id="ah2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#7fd4a0"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1200" height="640"/>
+  <text x="30" y="42" class="ttl">纹理数据流：顶点 UV → 光栅化插值 → 片元采样 → 最终颜色</text>
+  <text x="30" y="66" class="sub">以「木箱」为例（cube 几何体 + crate.jpg，1024×1024 位图）</text>
+
+  <!-- ============ ① 顶点属性 ============ -->
+  <rect class="card" x="28" y="96" width="266" height="248"/>
+  <text x="46" y="124" class="ttl" font-size="15">① 顶点 attribute</text>
+  <text x="46" y="146" class="sub">aPosition / aNormal / aUV</text>
+
+  <!-- 立方体示意 -->
+  <g transform="translate(56,152)">
+    <polygon points="0,50 78,20 168,50 90,80" fill="#3a4455" stroke="#5d6d84"/>
+    <polygon points="0,50 90,80 90,158 0,128" fill="#2c3442" stroke="#5d6d84"/>
+    <polygon points="90,80 168,50 168,128 90,158" fill="#232a36" stroke="#5d6d84"/>
+    <!-- 顶点 -->
+    <circle cx="0"   cy="50"  r="4" fill="#ffb454"/>
+    <circle cx="78"  cy="20"  r="4" fill="#ffb454"/>
+    <circle cx="168" cy="50"  r="4" fill="#ffb454"/>
+    <circle cx="90"  cy="80"  r="4" fill="#ffb454"/>
+    <circle cx="0"   cy="128" r="4" fill="#ffb454"/>
+    <circle cx="90"  cy="158" r="4" fill="#ffb454"/>
+    <circle cx="168" cy="128" r="4" fill="#ffb454"/>
+  </g>
+  <text x="46" y="330" class="body">每个顶点带一组 (u,v) ∈ [0,1]²</text>
+
+  <!-- ============ ② 光栅化插值 ============ -->
+  <rect class="card" x="320" y="96" width="266" height="248"/>
+  <text x="338" y="124" class="ttl" font-size="15">② 光栅化插值</text>
+  <text x="338" y="146" class="sub">varying / out → in</text>
+
+  <g transform="translate(352,166)">
+    <!-- 一个被光栅化的三角形，内部按颜色渐变表示 uv 插值 -->
+    <defs>
+      <linearGradient id="uvg" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0"   stop-color="#2b3a48"/>
+        <stop offset="0.5" stop-color="#4d7a9e"/>
+        <stop offset="1"   stop-color="#8ed3f5"/>
+      </linearGradient>
+    </defs>
+    <polygon points="0,120 90,0 190,120" fill="url(#uvg)" stroke="#5d6d84"/>
+    <circle cx="0"   cy="120" r="4.5" fill="#ffb454"/>
+    <circle cx="90"  cy="0"   r="4.5" fill="#ffb454"/>
+    <circle cx="190" cy="120" r="4.5" fill="#ffb454"/>
+    <text x="-14" y="140" class="code" font-size="11">uv(0,0)</text>
+    <text x="66"  y="-10" class="code" font-size="11">uv(1,1)</text>
+    <text x="168" y="140" class="code" font-size="11">uv(0,1)</text>
+  </g>
+  <text x="338" y="330" class="body">片元处的 UV 由三角形三个顶点线性插值</text>
+
+  <!-- ============ ③ 纹理采样 ============ -->
+  <rect class="card" x="612" y="96" width="266" height="248"/>
+  <text x="630" y="124" class="ttl" font-size="15">③ 纹理采样</text>
+  <text x="630" y="146" class="sub">texture(uTex, vUV * uUVScale)</text>
+
+  <g transform="translate(636,164)">
+    <rect x="0" y="0" width="150" height="150" fill="#8b5a2b" stroke="#5d6d84"/>
+    <!-- 木纹横条 -->
+    <g stroke="#6d4520" stroke-width="2" opacity="0.75">
+      <line x1="0" y1="18"  x2="150" y2="18"/>
+      <line x1="0" y1="38"  x2="150" y2="38"/>
+      <line x1="0" y1="62"  x2="150" y2="62"/>
+      <line x1="0" y1="88"  x2="150" y2="88"/>
+      <line x1="0" y1="114" x2="150" y2="114"/>
+      <line x1="0" y1="138" x2="150" y2="138"/>
+    </g>
+    <rect x="0" y="0" width="150" height="150" fill="none" stroke="#5d6d84"/>
+    <!-- 采样点 -->
+    <circle cx="104" cy="46" r="6" fill="none" stroke="#ff5d5d" stroke-width="2.5"/>
+    <circle cx="104" cy="46" r="2" fill="#ff5d5d"/>
+    <text x="112" y="42" class="code" font-size="11" fill="#ff9c9c">(u,v)</text>
+  </g>
+  <text x="630" y="330" class="body">按 UV 取出该点的 texel（可用平铺倍数放大）</text>
+
+  <!-- ============ ④ 片元输出 ============ -->
+  <rect class="card" x="904" y="96" width="268" height="248"/>
+  <text x="922" y="124" class="ttl" font-size="15">④ 片元颜色</text>
+  <text x="922" y="146" class="sub">albedo = uKd * texel.rgb</text>
+
+  <g transform="translate(928,168)">
+    <!-- texel -->
+    <rect x="0" y="0" width="52" height="52" fill="#b3763a" stroke="#5d6d84"/>
+    <g stroke="#8a5a28" stroke-width="2" opacity="0.8">
+      <line x1="0" y1="10" x2="52" y2="10"/>
+      <line x1="0" y1="22" x2="52" y2="22"/>
+      <line x1="0" y1="36" x2="52" y2="36"/>
+      <line x1="0" y1="46" x2="52" y2="46"/>
+    </g>
+    <text x="2" y="66" class="code" font-size="10" fill="#8b98ab">texel</text>
+
+    <text x="60" y="32" class="code" font-size="15">×</text>
+
+    <!-- kd -->
+    <rect x="78" y="0" width="52" height="52" fill="#dcdfe6" stroke="#5d6d84"/>
+    <text x="94" y="30" class="code" font-size="11" fill="#3a4250">kd</text>
+    
+
+    <text x="138" y="32" class="code" font-size="15">=</text>
+
+    <!-- 结果 -->
+    <rect x="156" y="0" width="52" height="52" fill="#8f5e2c" stroke="#ffb454" stroke-width="1.5"/>
+    <text x="150" y="66" class="code" font-size="10" fill="#ffb454">albedo</text>
+  </g>
+  <text x="922" y="272" class="code" font-size="12">color *= albedo;</text>
+  <text x="922" y="294" class="code" font-size="12">fragColor = vec4(color, alpha);</text>
+  <text x="922" y="320" class="body" font-size="12.5">纹理与光照在这里合成，</text>
+  <text x="922" y="338" class="body" font-size="12.5">写入帧缓冲供显示</text>
+
+  <!-- 箭头 -->
+  <line class="arrow" x1="296" y1="220" x2="314" y2="220"/>
+  <line class="arrow" x1="588" y1="220" x2="606" y2="220"/>
+  <line class="arrow" x1="880" y1="220" x2="898" y2="220"/>
+
+  <!-- ============ 下半：UV 展开 ============ -->
+  <rect class="card" x="28" y="372" width="1144" height="240"/>
+  <text x="46" y="402" class="ttl" font-size="15">UV 展开：立方体 6 个面 → 纹理图上的 6 块区域</text>
+  <text x="46" y="424" class="sub">本项目 createCube() 给每个面独立分配 [0,1]² 的 UV，所以同一张贴图在每个面上都完整显示一次</text>
+
+  <!-- 左侧：展开图 -->
+  <g transform="translate(56,440)">
+    <!-- 十字形展开 -->
+    <g stroke="#5d6d84" stroke-width="1.5">
+      <rect x="60" y="0"   width="60" height="60" fill="#2c3442"/>
+      <rect x="0"  y="60"  width="60" height="60" fill="#2c3442"/>
+      <rect x="60" y="60"  width="60" height="60" fill="#3a4455"/>
+      <rect x="120" y="60" width="60" height="60" fill="#2c3442"/>
+      <rect x="180" y="60" width="60" height="60" fill="#232a36"/>
+      <rect x="60" y="120" width="60" height="60" fill="#232a36"/>
+    </g>
+    <text x="76" y="34" class="code" font-size="11" fill="#8b98ab">+Y</text>
+    <text x="16" y="94" class="code" font-size="11" fill="#8b98ab">−X</text>
+    <text x="76" y="94" class="code" font-size="11" fill="#ffb454">+Z</text>
+    <text x="136" y="94" class="code" font-size="11" fill="#8b98ab">+X</text>
+    <text x="196" y="94" class="code" font-size="11" fill="#8b98ab">−Z</text>
+    <text x="76" y="154" class="code" font-size="11" fill="#8b98ab">−Y</text>
+  </g>
+
+  <!-- 右侧：对应贴图 -->
+  <g transform="translate(420,438)">
+    <rect x="0" y="0" width="160" height="160" fill="#8b5a2b" stroke="#5d6d84"/>
+    <g stroke="#6d4520" stroke-width="2" opacity="0.8">
+      <line x1="0" y1="20" x2="160" y2="20"/>
+      <line x1="0" y1="42" x2="160" y2="42"/>
+      <line x1="0" y1="68" x2="160" y2="68"/>
+      <line x1="0" y1="96" x2="160" y2="96"/>
+      <line x1="0" y1="124" x2="160" y2="124"/>
+      <line x1="0" y1="148" x2="160" y2="148"/>
+    </g>
+    <rect x="0" y="0" width="160" height="160" fill="none" stroke="#5d6d84"/>
+    <text x="52" y="88" class="code" font-size="12" fill="#3a2410">crate.jpg</text>
+    <text x="46" y="106" class="code" font-size="10" fill="#3a2410">1024 × 1024</text>
+  </g>
+
+  <text x="620" y="470" class="body">每个面的 4 个角点分别给</text>
+  <text x="620" y="494" class="code">(0,0) (1,0) (1,1) (0,1)</text>
+  <text x="620" y="522" class="body">光栅化时这 4 组 UV 在面内双线性插值，</text>
+  <text x="620" y="544" class="body">于是每个像素都能问「我该取贴图的哪一点」。</text>
+  <text x="620" y="572" class="body">地面/桌面这类大平面额外乘 uUVScale，</text>
+  <text x="620" y="594" class="body">让木纹重复几遍，而不是一张糊满整个桌面。</text>
+</svg>
