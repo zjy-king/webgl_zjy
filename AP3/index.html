@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AP3 · 光照与纹理场景</title>
+<style>
+  *{ box-sizing: border-box; }
+  html, body{
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0a0c10; color: #e6edf3;
+    font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 13px;
+  }
+  #app{ display: flex; height: 100vh; }
+
+  /* ---------------- 画布区 ---------------- */
+  #stage{
+    position: relative; flex: 1 1 auto; min-width: 0;
+    background: #0a0c10;
+  }
+  #glcanvas{ display: block; width: 100%; height: 100%; }
+
+  #hud{
+    position: absolute; top: 12px; left: 14px;
+    font-size: 11px; line-height: 1.7; color: #8b98a8;
+    background: rgba(6,9,14,.72); border: 1px solid rgba(90,120,160,.18);
+    border-radius: 6px; padding: 8px 12px; pointer-events: none;
+    backdrop-filter: blur(6px);
+  }
+  #hud b{ color: #c7d3e0; }
+  #hud .k{
+    display: inline-block; min-width: 16px; text-align: center;
+    background: #1c222c; border: 1px solid #2f3947; border-radius: 3px;
+    padding: 0 4px; margin: 0 2px; font-family: monospace; font-size: 10px;
+    color: #9fb0c4;
+  }
+
+  #stats{
+    position: absolute; bottom: 12px; right: 14px;
+    font-size: 11px; color: #6f8299; font-variant-numeric: tabular-nums;
+    background: rgba(6,9,14,.72); border-radius: 5px; padding: 4px 9px;
+    border: 1px solid rgba(90,120,160,.15); pointer-events: none;
+  }
+
+  #texStatus{
+    position: absolute; bottom: 12px; left: 14px;
+    font-size: 11px; color: #7ec699;
+    background: rgba(6,9,14,.72); border-radius: 5px; padding: 4px 9px;
+    border: 1px solid rgba(90,120,160,.15); pointer-events: none;
+  }
+
+  #selBadge{
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: #ffd08a;
+    background: rgba(40,26,10,.85); border: 1px solid rgba(200,140,60,.35);
+    border-radius: 20px; padding: 5px 16px; pointer-events: none;
+    opacity: 0; transition: opacity .18s;
+  }
+  #selBadge.on{ opacity: 1; }
+
+  /* ---------------- 面板 ---------------- */
+  #panel{
+    flex: 0 0 340px; width: 340px; height: 100vh; overflow-y: auto;
+    background: #10141b; border-left: 1px solid #1e2632;
+    transition: margin-right .22s ease;
+  }
+  #panel.hidden{ margin-right: -340px; }
+
+  #panel::-webkit-scrollbar{ width: 8px; }
+  #panel::-webkit-scrollbar-thumb{ background: #263041; border-radius: 4px; }
+  #panel::-webkit-scrollbar-track{ background: transparent; }
+
+  .panel-head{
+    padding: 16px 18px 12px; border-bottom: 1px solid #1a2230;
+    position: sticky; top: 0; background: #10141b; z-index: 2;
+  }
+  .panel-head h1{ margin: 0 0 3px; font-size: 15px; font-weight: 600; letter-spacing: .3px; }
+  .panel-head .sub{ font-size: 11px; color: #5e7086; }
+
+  #panelBody{ padding: 4px 18px 40px; }
+
+  section{ margin-bottom: 6px; padding: 10px 0 6px; border-bottom: 1px solid #161d28; }
+  section:last-child{ border-bottom: none; }
+
+  h3{
+    margin: 0 0 10px; font-size: 11px; font-weight: 600;
+    letter-spacing: 1.2px; color: #6d8ba8; text-transform: uppercase;
+  }
+
+  .row{ margin-bottom: 11px; }
+  .row-head{
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 5px;
+  }
+  .row-head label{ font-size: 12px; color: #b8c4d2; }
+  .val{ font-size: 11px; color: #5eb0ff; font-variant-numeric: tabular-nums; }
+
+  input[type=range]{
+    width: 100%; height: 18px; margin: 0; cursor: pointer;
+    -webkit-appearance: none; appearance: none; background: transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height: 3px; background: #212b3a; border-radius: 2px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance: none; appearance: none;
+    width: 13px; height: 13px; margin-top: -5px; border-radius: 50%;
+    background: #4a9eff; border: 2px solid #10141b;
+    box-shadow: 0 0 0 1px #4a9eff;
+  }
+  input[type=range]:hover::-webkit-slider-thumb{ background: #6cb2ff; }
+
+  input[type=color]{
+    width: 100%; height: 26px; padding: 0; border: 1px solid #263041;
+    border-radius: 4px; background: #0d1117; cursor: pointer;
+  }
+
+  .chk{
+    display: flex; align-items: center; gap: 7px;
+    margin-bottom: 8px; cursor: pointer; user-select: none;
+  }
+  .chk input{ accent-color: #4a9eff; width: 14px; height: 14px; cursor: pointer; }
+  .chk span{ font-size: 12px; color: #b8c4d2; }
+
+  .btn-row{ display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0 10px; }
+  button{
+    flex: 1 1 auto; min-width: 62px;
+    padding: 5px 8px; font-size: 11px; cursor: pointer;
+    color: #9fb0c4; background: #161d28; border: 1px solid #263041;
+    border-radius: 4px; transition: all .13s;
+  }
+  button:hover{ background: #1d2735; color: #cdd9e6; border-color: #34445a; }
+  button.on{
+    background: #1b4c86; color: #fff; border-color: #4a9eff;
+    box-shadow: 0 0 0 1px rgba(74,158,255,.3);
+  }
+
+  .sel-info{
+    font-size: 12px; color: #cdd9e6; margin-bottom: 12px;
+    padding: 8px 10px; background: #0d1319; border-radius: 5px;
+    border-left: 2px solid #4a9eff;
+  }
+  .sel-info .hint{ color: #5e7086; font-size: 11px; }
+  .hint{ font-size: 11px; color: #5e7086; }
+
+  /* ---------------- 错误层 ---------------- */
+  #err{
+    position: fixed; inset: 0; display: none; place-items: center;
+    background: #0a0c10; z-index: 99; padding: 40px;
+  }
+  #err pre{
+    color: #ff8a8a; font: 12px/1.7 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap; max-width: 860px;
+    border: 1px solid #4a1e1e; padding: 18px; border-radius: 8px;
+    background: #150a0a;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="stage">
+    <canvas id="glcanvas"></canvas>
+
+    <div id="hud">
+      <b>拖动</b> 转视角　<b>滚轮</b> 缩放　<b>点击物体</b> 选中调参<br>
+      <span class="k">1</span>仅环境
+      <span class="k">2</span>仅漫反射
+      <span class="k">3</span>仅镜面
+      <span class="k">4</span>全开
+      <span class="k">Esc</span>取消选中
+      <span class="k">H</span>收起面板
+    </div>
+
+    <div id="selBadge">已选中：<span id="selName">（未选中）</span></div>
+    <div id="stats">— fps</div>
+    <div id="dbgInfo">—</div>
+    <div id="texStatus">纹理加载中…</div>
+  </div>
+
+  <aside id="panel">
+    <div class="panel-head">
+      <h1>光照与纹理场景</h1>
+      <div class="sub">AP3 · Phong / 纹理 / 环境贴图 / 阴影 / 拾取</div>
+    </div>
+    <div id="panelBody"></div>
+  </aside>
+</div>
+
+<div id="err"><pre id="errMsg"></pre></div>
+
+<!-- ===== 教材配套库（未做任何修改）===== -->
+<script src="Common/utility.js"></script>
+<script src="Common/MV.js"></script>
+
+<!-- ===== 应用模块（按依赖顺序）===== -->
+<script src="js/shaders.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/gl.js"></script>
+<script src="js/shadow.js"></script>
+<script src="js/picking.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+
+</body>
+</html>
